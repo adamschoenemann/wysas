@@ -3,6 +3,7 @@ module Main where
 import Text.ParserCombinators.Parsec hiding (spaces)
 import System.Environment
 import Control.Monad
+import Data.Char (digitToInt)
 import Numeric
 
 data LispVal = Atom String
@@ -10,6 +11,8 @@ data LispVal = Atom String
              | DottedList [LispVal] LispVal
              | Number Integer
              | String String
+             | Character Char
+             | Float Float
              | Bool Bool
              deriving (Show)
 
@@ -18,6 +21,18 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 spaces :: Parser ()
 spaces = skipMany1 space
+
+parseCharacter :: Parser LispVal
+parseCharacter = do
+    _ <- char '#' >> char '\\'
+    cs <- (string "space" <|> string "newline") <|> (anyChar >>= return . (:[]))
+    return $ case cs of
+                "space" -> Character ' '
+                "newline" -> Character '\n'
+                [cs'] -> Character cs'
+
+
+parseFloat :: Parser LispVal
 
 parseString :: Parser LispVal
 parseString = do
@@ -48,16 +63,18 @@ parseNumber = do
             return $ (Number . reader) ds
         d   -> liftM (Number . read . (d:)) (many digit)
     where
+        getReader :: Char -> (String -> Integer)
         getReader 'd' = read
         getReader 'x' = fst . head . readHex
         getReader 'o' = fst . head . readOct
-        -- getReader 'b' = readBin
-        --readBin = foldl' (\acc x -> acc * 2 + digitToInt x) 0
+        getReader 'b' = readBin
+        readBin = toInteger . foldl (\acc x -> acc * 2 + digitToInt x) 0
 
 parseExpr :: Parser LispVal
 parseExpr =  parseAtom
          <|> parseString
          <|> parseNumber
+         <|> parseCharacter
 
 
 readExpr :: String -> String
