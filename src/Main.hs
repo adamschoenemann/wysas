@@ -33,6 +33,9 @@ parseCharacter = do
 
 
 parseFloat :: Parser LispVal
+parseFloat = do
+    digits <- many digit >> (char '.')
+    return Float (readFloat digits)
 
 parseString :: Parser LispVal
 parseString = do
@@ -73,8 +76,8 @@ parseNumber = do
 parseExpr :: Parser LispVal
 parseExpr =  parseAtom
          <|> parseString
-         <|> parseNumber
          <|> parseCharacter
+         <|> parseNumber
 
 
 readExpr :: String -> String
