@@ -1,19 +1,30 @@
+{-# LANGUAGE GADTs #-}
+
 module Main where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
 import System.Environment
 import Control.Monad
+import Control.Applicative ((<*))
 import Data.Char (digitToInt)
+import Data.Complex
 import Numeric
 
 data LispVal = Atom String
              | List [LispVal]
              | DottedList [LispVal] LispVal
              | Number Integer
+             | Num LispNum
              | String String
              | Character Char
              | Float Float
              | Bool Bool
+             deriving (Show)
+
+data LispNum = LRea Double
+             | LInt Integer
+             | LRat Rational
+             | LCom (Complex Double)
              deriving (Show)
 
 symbol :: Parser Char
@@ -21,6 +32,36 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 spaces :: Parser ()
 spaces = skipMany1 space
+
+parseNumber :: Parser LispVal
+parseNumber = do
+    num <- lookAhead $ many (noneOf " ")
+    case num of
+        ('#':num') -> parseInteger
+        num' -> case () of
+            _ | '.' `elem` num' -> parseReal
+              | '+' `elem` num' && last num' == 'i' -> parseComplex
+              | '/' `elem` num' -> parseRational
+              | otherwise -> parseInteger
+
+parseReal :: Parser LispVal
+parseReal = do
+    digits <- many (digit <|> char '.')
+    return $ Num $ LRea ((fst . head . readFloat) digits)
+
+parseComplex :: Parser LispVal
+parseComplex = do
+    real <- (many1 digit) <* (char '+')
+    img  <- (many1 digit) <* (char 'i')
+    let reader = (fst . head . readFloat)
+    return $ Num $ LCom $ (reader real) :+ (reader img)
+
+
+parseRational :: Parser LispVal
+parseRational = do
+    ops <- sepBy1 (many digit) (char '/')
+    let [num, denom] = map (read) ops :: [Integer]
+    return $ Num $ LRat $ (toRational num) / (toRational denom)
 
 parseCharacter :: Parser LispVal
 parseCharacter = do
@@ -30,12 +71,6 @@ parseCharacter = do
                 "space" -> Character ' '
                 "newline" -> Character '\n'
                 [cs'] -> Character cs'
-
-
-parseFloat :: Parser LispVal
-parseFloat = do
-    digits <- many digit >> (char '.')
-    return Float (readFloat digits)
 
 parseString :: Parser LispVal
 parseString = do
@@ -55,8 +90,8 @@ parseAtom = do
         "#f" -> Bool False
         _    -> Atom atom
 
-parseNumber :: Parser LispVal
-parseNumber = do
+parseInteger :: Parser LispVal
+parseInteger = do
     f <- char '#' <|> digit
     case f of
         '#' -> do
@@ -77,7 +112,7 @@ parseExpr :: Parser LispVal
 parseExpr =  parseAtom
          <|> parseString
          <|> parseCharacter
-         <|> parseNumber
+         <|> parseInteger
 
 
 readExpr :: String -> String
