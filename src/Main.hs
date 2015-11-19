@@ -5,20 +5,21 @@ module Main where
 import Text.ParserCombinators.Parsec hiding (spaces)
 import System.Environment
 import Control.Monad
-import Control.Applicative ((<*))
+import Control.Applicative ((<*), (*>), (<*>))
 import Data.Char (digitToInt)
 import Data.Complex
+import Data.Array
 import Numeric
+
 
 data LispVal = Atom String
              | List [LispVal]
              | DottedList [LispVal] LispVal
-             | Number Integer
-             | Num LispNum
+             | Number LispNum
              | String String
              | Character Char
-             | Float Float
              | Bool Bool
+             | Vector (Array Integer LispVal)
              deriving (Show)
 
 data LispNum = LRea Double
@@ -47,25 +48,42 @@ parseNumber = do
 parseReal :: Parser LispVal
 parseReal = do
     digits <- many (digit <|> char '.')
-    return $ Num $ LRea ((fst . head . readFloat) digits)
+    return $ Number $ LRea ((fst . head . readFloat) digits)
 
 parseComplex :: Parser LispVal
 parseComplex = do
     real <- (many1 digit) <* (char '+')
     img  <- (many1 digit) <* (char 'i')
     let reader = (fst . head . readFloat)
-    return $ Num $ LCom $ (reader real) :+ (reader img)
+    return $ Number $ LCom $ (reader real) :+ (reader img)
 
 
 parseRational :: Parser LispVal
 parseRational = do
     ops <- sepBy1 (many digit) (char '/')
     let [num, denom] = map (read) ops :: [Integer]
-    return $ Num $ LRat $ (toRational num) / (toRational denom)
+    return $ Number $ LRat $ (toRational num) / (toRational denom)
+
+parseInteger :: Parser LispVal
+parseInteger = do
+    f <- char '#' <|> digit
+    case f of
+        '#' -> do
+            r <- oneOf "bodx"
+            let (reader, permitted) = getFormat r
+            ds <- many $ permitted
+            return $ (Number . LInt . reader) ds
+        d   -> liftM (Number . LInt . read . (d:)) (many digit)
+    where
+        getFormat 'd' = (read, digit)
+        getFormat 'x' = (fst . head . readHex, digit <|> oneOf (['a'..'f'] ++ ['A'..'F']))
+        getFormat 'o' = (fst . head . readOct, oneOf ['0'..'7'])
+        getFormat 'b' = (readBin, oneOf "01")
+        readBin = toInteger . foldl (\acc x -> acc * 2 + digitToInt x) 0
 
 parseCharacter :: Parser LispVal
 parseCharacter = do
-    _ <- char '#' >> char '\\'
+    try $ char '#' >> char '\\'
     cs <- (string "space" <|> string "newline") <|> (anyChar >>= return . (:[]))
     return $ case cs of
                 "space" -> Character ' '
@@ -90,29 +108,52 @@ parseAtom = do
         "#f" -> Bool False
         _    -> Atom atom
 
-parseInteger :: Parser LispVal
-parseInteger = do
-    f <- char '#' <|> digit
-    case f of
-        '#' -> do
-            r <- oneOf "bodx"
-            let reader = getReader r
-            ds <- many anyChar
-            return $ (Number . reader) ds
-        d   -> liftM (Number . read . (d:)) (many digit)
-    where
-        getReader :: Char -> (String -> Integer)
-        getReader 'd' = read
-        getReader 'x' = fst . head . readHex
-        getReader 'o' = fst . head . readOct
-        getReader 'b' = readBin
-        readBin = toInteger . foldl (\acc x -> acc * 2 + digitToInt x) 0
+
+parseList :: Parser LispVal
+parseList = liftM List $ sepBy parseExpr spaces
+
+parseDottedList :: Parser LispVal
+parseDottedList = do
+    head <- endBy parseExpr spaces
+    tail <- char '.' >> spaces >> parseExpr
+    return $ DottedList head tail
+
+parseQuoted :: Parser LispVal
+parseQuoted = do
+    char '\''
+    x <- parseExpr
+    return $ List [Atom "quote", x]
+
+parseBackquote :: Parser LispVal
+parseBackquote = do
+    char '`'
+    x <- parseExpr
+    return $ List [Atom "quasiquote", x]
+
+parseVector :: Parser LispVal
+parseVector = do
+    try (char '#' >> char '(')
+    exprs <- sepBy parseExpr spaces
+    char ')'
+    let arr = listArray (0, toInteger $ length exprs - 1) exprs
+    return $ Vector arr
+
+parseListOrDottedList :: Parser LispVal
+parseListOrDottedList = do
+    char '('
+    x <- try parseList <|> parseDottedList -- try --> backtrack on fail, dont consume
+    char ')'
+    return x
+
 
 parseExpr :: Parser LispVal
-parseExpr =  parseAtom
-         <|> parseString
+parseExpr =  parseString
+         <|> parseVector
          <|> parseCharacter
          <|> parseInteger
+         <|> (char '(' >> parseList <* char ')')
+         <|> parseQuoted
+         <|> parseAtom
 
 
 readExpr :: String -> String
