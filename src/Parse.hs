@@ -1,6 +1,7 @@
 module Parse where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
+import Control.Monad.Error
 import Control.Monad
 import Control.Applicative ((<*), (*>), (<*>))
 import Data.Char (digitToInt)
@@ -9,6 +10,7 @@ import Data.Array
 import Numeric
 
 import LispVal
+import LispError
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
@@ -138,8 +140,8 @@ parseExpr =  parseString
          <|> parseAtom
 
 
-readExpr :: String -> LispVal
+readExpr :: String -> ThrowsError LispVal
 readExpr input = case parse parseExpr "lisp" input of
-    Left err -> String $ "No match " ++ show err
-    Right val -> val
+    Left err -> throwError $ Parser err
+    Right val -> return val
 

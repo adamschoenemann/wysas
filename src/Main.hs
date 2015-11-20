@@ -9,4 +9,4 @@ import Parse
 import Eval
 
 main :: IO ()
-main = getArgs >>= print . eval . readExpr . head
+main = getArgs >>= putStrLn . either show (show . eval) . readExpr . head

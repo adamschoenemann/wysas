@@ -25,7 +25,7 @@ showVal (Bool True)  = "#t"
 showVal (Bool False) = "#f"
 showVal (List v) = "(" ++ unwordsList v ++ ")"
 showVal (DottedList h t) = "(" ++ unwordsList h ++ " . " ++ showVal t ++ ")"
-showVal (Vector a) = "(" ++ (unwordsList . elems $ a) ++ ")"
+showVal (Vector a) = "#(" ++ (unwordsList . elems $ a) ++ ")"
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
