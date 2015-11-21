@@ -9,6 +9,8 @@ import Data.Complex
 import Data.Array
 import Numeric
 
+import Debug.Trace
+
 import LispVal
 import LispError
 
@@ -49,21 +51,22 @@ parseRational = do
     return $ Number $ LRat $ (toRational num) / (toRational denom)
 
 parseInteger :: Parser LispVal
-parseInteger = do
-    f <- char '#' <|> digit
-    case f of
-        '#' -> do
-            r <- oneOf "bodx"
-            let (reader, permitted) = getFormat r
-            ds <- many $ permitted
-            return $ (Number . LInt . reader) ds
-        d   -> liftM (Number . LInt . read . (d:)) (many digit)
-    where
-        getFormat 'd' = (read, digit)
-        getFormat 'x' = (fst . head . readHex, digit <|> oneOf (['a'..'f'] ++ ['A'..'F']))
-        getFormat 'o' = (fst . head . readOct, oneOf ['0'..'7'])
-        getFormat 'b' = (readBin, oneOf "01")
-        readBin = toInteger . foldl (\acc x -> acc * 2 + digitToInt x) 0
+parseInteger = (parseDecimal) <|> (parseFormat) where
+    parseFormat = do
+        r <- try $ char '#' >> oneOf "bodx"
+        let (reader, permitted) = getFormat r
+        ds <- many $ permitted
+        return $ (Number . LInt . reader) ds
+        where
+            getFormat 'd' = (read, digit)
+            getFormat 'x' = (fst . head . readHex, digit <|> oneOf (['a'..'f'] ++ ['A'..'F']))
+            getFormat 'o' = (fst . head . readOct, oneOf ['0'..'7'])
+            getFormat 'b' = (readBin, oneOf "01")
+            readBin = toInteger . foldl (\acc x -> acc * 2 + digitToInt x) 0
+
+    parseDecimal = do
+        ds <- try (many1 digit)
+        (return . Number . LInt . read) ds
 
 parseCharacter :: Parser LispVal
 parseCharacter = do
@@ -134,10 +137,10 @@ parseExpr :: Parser LispVal
 parseExpr =  parseString
          <|> parseVector
          <|> parseCharacter
-         <|> parseInteger
+         <|> parseNumber
+         <|> parseAtom
          <|> parseListOrDottedList
          <|> parseQuoted
-         <|> parseAtom
 
 
 readExpr :: String -> ThrowsError LispVal

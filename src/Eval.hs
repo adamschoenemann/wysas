@@ -1,3 +1,5 @@
+{-# LANGUAGE ExistentialQuantification #-}
+
 module Eval where
 
 import Data.Complex (realPart)
@@ -11,6 +13,12 @@ eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool   _) = return val
 eval (List [Atom "quote", val]) = return val
+eval (List [Atom "if", pred, conseq, alt]) = do
+    result <- eval pred
+    case result of
+        Bool False -> eval alt
+        Bool True  -> eval conseq
+        otherwise  -> throwError $ TypeMismatch "Predicate should return Bool" result
 eval (List (Atom func : args)) = mapM eval args >>= apply func
 eval badform = throwError $ BadSpecialForm "Unrecognized special form" badform
 
@@ -34,7 +42,72 @@ primitives = [("+", numericBinop (+))
              ,("boolean?", isBoolean)
              ,("null?", isNull)
              ,("symbol->string", symbolToString)
-             ,("string->symbol", stringToSymbol)]
+             ,("string->symbol", stringToSymbol)
+             ,("=", numBoolBinop (==))
+             ,("<", numBoolBinop (<))
+             ,(">", numBoolBinop (>))
+             ,("/=", numBoolBinop (/=))
+             ,(">=", numBoolBinop (>=))
+             ,("<=", numBoolBinop (<=))
+             ,("&&", boolBoolBinop (&&))
+             ,("||", boolBoolBinop (||))
+             ,("string=?", strBoolBinop (==))
+             ,("string<?", strBoolBinop (<))
+             ,("string>?", strBoolBinop (>))
+             ,("string<=?", strBoolBinop (<=))
+             ,("string>=?", strBoolBinop (>=))
+             ,("car", car)
+             ,("cdr", cdr)
+             ,("cons", cons)
+             ,("eqv?", eqv)
+             ,("eq?", eqv)
+             ,("equal?", equal)
+             ]
+
+car :: [LispVal] -> ThrowsError LispVal
+car [(DottedList (x:xs) _)] = return x
+car [(List (x:xs))] = return x
+car [x]               = throwError $ TypeMismatch "Expected a list" x
+car badArgs     = throwError $ NumArgs 1 badArgs
+
+cdr :: [LispVal] -> ThrowsError LispVal
+cdr [(List (x:xs))] = return $ List xs
+cdr [(DottedList [_] tail)] = return tail
+cdr [(DottedList (_:xs) x)] = return $ DottedList xs x
+cdr [bad] = throwError $ TypeMismatch "Expected a list" bad
+cdr badArgs = throwError $ NumArgs 1 badArgs
+
+cons :: [LispVal] -> ThrowsError LispVal
+cons [x, List xs] = return $ List (x:xs)
+cons [x, DottedList h t] = return $ DottedList (x:h) t
+cons [x, y] = return $ DottedList [x] y
+cons badArgList = throwError $ NumArgs 2 badArgList
+
+eqv :: [LispVal] -> ThrowsError LispVal
+eqv [(Bool arg1), (Bool arg2)]             = return $ Bool $ arg1 == arg2
+eqv [(Number arg1), (Number arg2)]         = return $ Bool $ arg1 == arg2
+eqv [(String arg1), (String arg2)]         = return $ Bool $ arg1 == arg2
+eqv [(Atom arg1), (Atom arg2)]             = return $ Bool $ arg1 == arg2
+eqv [(DottedList xs x), (DottedList ys y)] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
+eqv [(List arg1), (List arg2)]             = return $ Bool $ (length arg1 == length arg2) &&
+                                                             (all eqvPair $ zip arg1 arg2)
+     where eqvPair (x1, x2) = case eqv [x1, x2] of
+                                Left err -> False
+                                Right (Bool val) -> val
+eqv [_, _]                                 = return $ Bool False
+eqv badArgList                             = throwError $ NumArgs 2 badArgList
+
+
+equal :: [LispVal] -> ThrowsError LispVal
+equal [x, y] = do
+    eqs <- mapM (unpackEquals x y) unpackers >>= (return . or)
+    (Bool isEqv) <- eqv [x, y]
+    return . Bool $ eqs || isEqv
+    where
+        unpackers = [ AnyUnpacker unpackNum
+                    , AnyUnpacker unpackStr
+                    , AnyUnpacker unpackBool
+                    ]
 
 isSymbol, isNumber, isBoolean, isList, isNull :: [LispVal] -> ThrowsError LispVal
 
@@ -65,12 +138,49 @@ symbolToString (bad:xs) = throwError $ TypeMismatch "symbol->string must be call
 stringToSymbol [(String name)] = return $ Atom name
 stringToSymbol (bad:xs) = throwError $ TypeMismatch "string->symbol must be called on a string" bad
 
+boolBinop :: (LispVal -> ThrowsError a)
+          -> (a -> a -> Bool)
+          -> [LispVal]
+          -> ThrowsError LispVal
+boolBinop unpacker op params
+    | length params /= 2 = throwError $ NumArgs 2 params
+    | otherwise = do
+        left <- unpacker $ params !! 0
+        right <- unpacker $ params !! 1
+        return . Bool $ left `op` right
 
+numBoolBinop = boolBinop unpackNum
+strBoolBinop = boolBinop unpackStr
+boolBoolBinop = boolBinop unpackBool
 
 numericBinop :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
 numericBinop op []     = throwError $ NumArgs 2 []
 numericBinop op single@[_] = throwError $ NumArgs 2 single
 numericBinop op params = mapM unpackNum params >>= (return . (Number . LInt) . foldl1 op)
+
+
+data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
+
+unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
+unpackEquals x y (AnyUnpacker unpack) =
+    do
+        x' <- unpack x
+        y' <- unpack y
+        return $ x' == y'
+    `catchError` (const $ return False)
+
+
+unpackBool :: LispVal -> ThrowsError Bool
+unpackBool (Bool b) = return b
+unpackBool b = throwError $ TypeMismatch "Expected a boolean" b
+
+unpackStr :: LispVal -> ThrowsError String
+unpackStr (String s) = return s
+unpackStr (Bool b)   = return $ show b
+unpackStr (Number n) = do
+    n' <- unpackNum (Number n)
+    return $ show n'
+unpackStr s = throwError $ TypeMismatch  "Expected a string" s
 
 unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return $
@@ -80,10 +190,10 @@ unpackNum (Number n) = return $
         LRat r -> truncate . fromRational $ r
         LCom c -> truncate . realPart $ c
 
---unpackNum (String n) = let parsed = reads n :: [(Integer, String)]
---                       in  if null parsed
---                              then 0
---                              else fst $ head parsed
---unpackNum (List [n]) = unpackNum n
+unpackNum (String n) = let parsed = reads n :: [(Integer, String)]
+                      in  if null parsed
+                             then throwError . Default $ "String " ++ n ++ " is not numeric"
+                             else (return . fst . head) parsed
+unpackNum (List [n]) = unpackNum n
 unpackNum bad = throwError $ TypeMismatch "Expected a number" bad
 

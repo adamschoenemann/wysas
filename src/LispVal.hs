@@ -16,6 +16,7 @@ data LispNum = LRea Double
              | LInt Integer
              | LRat Rational
              | LCom (Complex Double)
+             deriving (Eq)
 
 showVal :: LispVal -> String
 showVal (String v)   = "\"" ++ v ++ "\""
