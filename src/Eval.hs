@@ -83,31 +83,40 @@ cons [x, DottedList h t] = return $ DottedList (x:h) t
 cons [x, y] = return $ DottedList [x] y
 cons badArgList = throwError $ NumArgs 2 badArgList
 
+
+areListsEqual :: [LispVal] -> [LispVal] -> ([LispVal] -> ThrowsError LispVal)
+              -> ThrowsError Bool
+areListsEqual l1 l2 cmp = do
+    return $ (length l1 == length l2) &&
+                    (all cmp' $ zipWith (\x y -> [x, y]) l1 l2)
+    where cmp' x = case cmp x of
+                     Left err -> False
+                     Right (Bool val) -> val
+
+
 eqv :: [LispVal] -> ThrowsError LispVal
 eqv [(Bool arg1), (Bool arg2)]             = return $ Bool $ arg1 == arg2
 eqv [(Number arg1), (Number arg2)]         = return $ Bool $ arg1 == arg2
 eqv [(String arg1), (String arg2)]         = return $ Bool $ arg1 == arg2
 eqv [(Atom arg1), (Atom arg2)]             = return $ Bool $ arg1 == arg2
 eqv [(DottedList xs x), (DottedList ys y)] = eqv [List $ xs ++ [x], List $ ys ++ [y]]
-eqv [(List arg1), (List arg2)]             = return $ Bool $ (length arg1 == length arg2) &&
-                                                             (all eqvPair $ zip arg1 arg2)
-     where eqvPair (x1, x2) = case eqv [x1, x2] of
-                                Left err -> False
-                                Right (Bool val) -> val
+eqv [(List arg1), (List arg2)]             = liftM Bool $ areListsEqual arg1 arg2 eqv
 eqv [_, _]                                 = return $ Bool False
 eqv badArgList                             = throwError $ NumArgs 2 badArgList
 
 
 equal :: [LispVal] -> ThrowsError LispVal
+equal [(List xs), (List ys)] = liftM Bool $ areListsEqual xs ys equal
+equal [(DottedList xs x), (DottedList ys y)] = equal [List $ xs ++ [x], List $ ys ++ [y]]
 equal [x, y] = do
     eqs <- mapM (unpackEquals x y) unpackers >>= (return . or)
-    (Bool isEqv) <- eqv [x, y]
-    return . Bool $ eqs || isEqv
+    return . Bool $ eqs
     where
         unpackers = [ AnyUnpacker unpackNum
                     , AnyUnpacker unpackStr
                     , AnyUnpacker unpackBool
                     ]
+equal bad = throwError $ NumArgs 2 bad
 
 isSymbol, isNumber, isBoolean, isList, isNull :: [LispVal] -> ThrowsError LispVal
 
