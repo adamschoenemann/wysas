@@ -62,7 +62,31 @@ primitives = [("+", numericBinop (+))
              ,("eqv?", eqv)
              ,("eq?", eqv)
              ,("equal?", equal)
+             ,("cond", cond)
+             ,("case", caseFun)
              ]
+
+
+cond :: [LispVal] -> ThrowsError LispVal
+cond ((List [test, expr]):xs) = do
+    r' <- eval test
+    case r' of
+        (Bool True)  -> eval expr
+        (Bool False) -> cond xs
+        _        -> throwError $ TypeMismatch "a boolean expression" r'
+cond [] = throwError $ NumArgs 1 []
+cond (x:xs) = throwError $ TypeMismatch "(test expr)" x
+
+{- Needs to conform to spec -}
+caseFun :: [LispVal] -> ThrowsError LispVal
+caseFun (key:datum:xs) = do
+    evaled <- eval key
+    result <- eqv [key, datum]
+    case result of
+        (Bool True)  -> return $ result
+        (Bool False) -> caseFun (key:xs)
+        r            -> throwError $ TypeMismatch "Bool" r
+
 
 car :: [LispVal] -> ThrowsError LispVal
 car [(DottedList (x:xs) _)] = return x
