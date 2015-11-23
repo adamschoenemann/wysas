@@ -5,6 +5,7 @@ module Eval where
 import Data.Complex (realPart)
 import Control.Monad.Error
 import Debug.Trace
+import Data.Char (toUpper)
 
 import LispVal
 import LispError
@@ -13,6 +14,7 @@ eval :: LispVal -> ThrowsError LispVal
 eval val@(String _) = return val
 eval val@(Number _) = return val
 eval val@(Bool   _) = return val
+eval val@(Character _) = return val
 eval (List [Atom "quote", val]) = return val
 eval (List [Atom "if", pred, conseq, alt]) = do
     result <- eval pred
@@ -57,6 +59,12 @@ primitives = [("+", numericBinop (+))
              ,("string>?", strBoolBinop (>))
              ,("string<=?", strBoolBinop (<=))
              ,("string>=?", strBoolBinop (>=))
+             ,("string-ci=?", strBoolBinop $ stringCIOp (==))
+             ,("string-ci<?", strBoolBinop $ stringCIOp (<))
+             ,("string-ci>?", strBoolBinop $ stringCIOp (>))
+             ,("string-ci<=?", strBoolBinop $ stringCIOp (<=))
+             ,("string-ci>=?", strBoolBinop $ stringCIOp (>=))
+             ,("substring", substring)
              ,("car", car)
              ,("cdr", cdr)
              ,("cons", cons)
@@ -65,8 +73,69 @@ primitives = [("+", numericBinop (+))
              ,("equal?", equal)
              ,("cond", cond)
              ,("case", caseFun)
+             ,("make-string", makeString)
+             ,("string-length", stringLength)
+             ,("string-ref", stringRef)
+             ,("string-append", stringAppend)
+             ,("string->list", stringToList)
+             ,("list->string", listToString)
              ]
 
+listToString :: [LispVal] -> ThrowsError LispVal
+listToString [List xs] =
+    if all isChar xs
+        then return $ String $ map unwrap xs
+        else throwError $ Default $ "Cannot convert list with a non-char" where
+            unwrap (Character c) = c
+            isChar (Character c) = True
+            isChar _             = False
+listToString [x] = throwError $ TypeMismatch "List" x
+listToString xs = throwError $ NumArgs 1 xs
+
+stringToList :: [LispVal] -> ThrowsError LispVal
+stringToList [String s] = return . List $ map Character s
+stringToList [x] = throwError $ TypeMismatch "String" x
+stringToList xs = throwError $ NumArgs 1 xs
+
+stringAppend :: [LispVal] -> ThrowsError LispVal
+stringAppend [String x, String y] = return $ String $ x ++ y
+stringAppend [String _,x] = throwError $ TypeMismatch "String" x
+stringAppend [x,_] = throwError $ TypeMismatch "String" x
+stringAppend xs = throwError $ NumArgs 2 xs
+
+substring :: [LispVal] -> ThrowsError LispVal
+substring [String s, Number (LInt f), Number (LInt t)]
+    | f' <= t' && t' <= length s = return . String . drop f' . take t' $ s
+    | otherwise = throwError $ Default $
+        "invalid indices specified (" ++ show f ++ ", " ++ show t ++ ")"
+    where   f' = fromInteger f
+            t' = fromInteger t
+substring xs = throwError $ NumArgs 3 xs
+
+stringCIOp :: (String -> String -> Bool) -> (String -> String -> Bool)
+stringCIOp op x y = map toUpper x `op` map toUpper y
+
+stringRef :: [LispVal] -> ThrowsError LispVal
+stringRef [String s, Number (LInt i)]
+    | i' >= 0 && i' < length s = return . Character $ s !! i'
+    | otherwise = throwError . Default $ "invalid index " ++ show i
+    where i' = fromInteger i
+
+stringRef [s] = throwError $ NumArgs 2 [s]
+stringRef [] = throwError $ NumArgs 2 []
+stringRef (x:xs) = throwError $ TypeMismatch "String" x
+
+stringLength :: [LispVal] -> ThrowsError LispVal
+stringLength [String s] = return . Number . LInt . toInteger $ length s
+stringLength [] = throwError $ NumArgs 1 []
+stringLength (x:xs) = throwError $ TypeMismatch "String" x
+
+makeString :: [LispVal] -> ThrowsError LispVal
+makeString [Number (LInt k), Character c] =
+    return $ String $ replicate (fromInteger k) c
+makeString [k'@(Number (LInt k))] = makeString [k', Character ' ']
+makeString [] = throwError $ NumArgs 1 []
+makeString (x:xs) = throwError $ TypeMismatch "Integer" x
 
 
 cond :: [LispVal] -> ThrowsError LispVal

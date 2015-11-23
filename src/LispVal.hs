@@ -22,6 +22,7 @@ showVal :: LispVal -> String
 showVal (String v)   = "\"" ++ v ++ "\""
 showVal (Atom   v)   = v
 showVal (Number v)   = show v
+showVal (Character c) = "#\\" ++ [c]
 showVal (Bool True)  = "#t"
 showVal (Bool False) = "#f"
 showVal (List v) = "(" ++ unwordsList v ++ ")"
