@@ -4,6 +4,7 @@ module Eval where
 
 import Data.Complex (realPart)
 import Control.Monad.Error
+import Debug.Trace
 
 import LispVal
 import LispError
@@ -24,7 +25,7 @@ eval badform = throwError $ BadSpecialForm "Unrecognized special form" badform
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
 apply func args = maybe
-    (throwError $ NotFunction "Unrecognized primitive function args" func)
+    (throwError $ NotFunction "Unrecognized primitive function" func)
     ($ args) $ lookup func primitives
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
@@ -67,7 +68,9 @@ primitives = [("+", numericBinop (+))
              ]
 
 
+
 cond :: [LispVal] -> ThrowsError LispVal
+cond ((List [Atom "else", expr]):[]) = eval expr
 cond ((List [test, expr]):xs) = do
     r' <- eval test
     case r' of
@@ -77,15 +80,20 @@ cond ((List [test, expr]):xs) = do
 cond [] = throwError $ NumArgs 1 []
 cond (x:xs) = throwError $ TypeMismatch "(test expr)" x
 
-{- Needs to conform to spec -}
 caseFun :: [LispVal] -> ThrowsError LispVal
-caseFun (key:datum:xs) = do
-    evaled <- eval key
-    result <- eqv [key, datum]
+caseFun [_, List [Atom "else", expr]] = eval expr
+caseFun (key:(List [List clauses,expr]):xs) = do
+    comparisons <- mapM (\c -> eqv [key, c]) clauses
+    let result = (or . map extractBool) comparisons
     case result of
-        (Bool True)  -> return $ result
-        (Bool False) -> caseFun (key:xs)
-        r            -> throwError $ TypeMismatch "Bool" r
+        True  -> eval expr
+        False -> caseFun (key:xs)
+    where
+        extractBool (Bool True) = True
+        extractBool (Bool False) = False
+caseFun [key] = return $ Atom "undefined"
+caseFun [] = throwError $ NumArgs 2 []
+caseFun (x:xs) = throwError $ TypeMismatch "((c1, c2 ...) expr)" x
 
 
 car :: [LispVal] -> ThrowsError LispVal
