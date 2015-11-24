@@ -5,12 +5,10 @@ import Control.Monad.Error
 
 import LispData
 
-type Env = IORef [(String, IORef LispVal)]
 
 nullEnv :: IO Env
 nullEnv = newIORef []
 
-type IOThrowsError = ErrorT LispError IO
 
 liftThrows :: ThrowsError a -> IOThrowsError a
 liftThrows (Left err) = throwError err
@@ -57,8 +55,3 @@ bindVars envRef bindings = readIORef envRef >>= extendEnv bindings >>= newIORef
                 ref <- newIORef value
                 return (var, ref)
 
-updateMap :: Eq a => [(a,b)] -> (a,b) -> [(a,b)]
-updateMap [] val = [val]
-updateMap (old@(k,_):xs) new@(k',_)
-    | k == k' = new:xs
-    | otherwise = old : updateMap xs new

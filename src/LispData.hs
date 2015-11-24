@@ -4,6 +4,8 @@ import Data.Complex
 import Data.Array
 import Control.Monad.Error
 import Text.ParserCombinators.Parsec.Error
+import Control.Monad.Error
+import Data.IORef
 
 data LispVal = Atom String
              | List [LispVal]
@@ -14,7 +16,15 @@ data LispVal = Atom String
              | Bool Bool
              | Vector (Array Integer LispVal)
              | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
+             | Func LispFunc
 
+
+data LispFunc =
+    LFunc { params :: [String]
+          , vararg :: (Maybe String)
+          , body :: [LispVal]
+          , closure :: Env
+          }
 
 data LispNum = LRea Double
              | LInt Integer
@@ -32,6 +42,11 @@ showVal (Bool False) = "#f"
 showVal (List v) = "(" ++ unwordsList v ++ ")"
 showVal (DottedList h t) = "(" ++ unwordsList h ++ " . " ++ showVal t ++ ")"
 showVal (Vector a) = "#(" ++ (unwordsList . elems $ a) ++ ")"
+showVal (PrimitiveFunc _) = "<primitive>"
+showVal (Func f) = "(lambda (" ++ unwords (map show $ params f) ++
+    (case vararg f of
+        Nothing -> ""
+        Just arg -> " . " ++ arg) ++ ") ...)"
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
@@ -82,3 +97,12 @@ trapError action = catchError action (return . show)
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
+
+type Env = IORef [(String, IORef LispVal)]
+type IOThrowsError = ErrorT LispError IO
+
+makeFunc :: (Maybe String) -> Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
+makeFunc varargs env params body = return $ Func $ LFunc (map showVal params) varargs body env
+
+makeNormalFunc = makeFunc Nothing
+makeVarArgs = makeFunc . Just . showVal

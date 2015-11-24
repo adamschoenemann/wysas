@@ -10,6 +10,7 @@ import Text.ParserCombinators.Parsec (parse)
 import Parse
 import Eval
 import LispEnv
+import LispData
 
 flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout
@@ -39,7 +40,11 @@ until_ pred prompt action = do
         else action result >> until_ pred prompt action
 
 runRepl :: IO ()
-runRepl = nullEnv >>= until_ (== "quit") (readPrompt "Lisp>>> ") . evalAndPrint
+runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Lisp>>> ") . evalAndPrint
 
 runOne :: String -> IO ()
-runOne expr = nullEnv >>= flip evalAndPrint expr
+runOne expr = primitiveBindings >>= flip evalAndPrint expr
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= (flip bindVars $ map makePrimitiveFunc primitives)
+    where makePrimitiveFunc (var, func) = (var, PrimitiveFunc func)
