@@ -9,21 +9,59 @@ import Data.Char (toUpper)
 
 import LispVal
 import LispError
+import LispEnv
 
-eval :: LispVal -> ThrowsError LispVal
-eval val@(String _) = return val
-eval val@(Number _) = return val
-eval val@(Bool   _) = return val
-eval val@(Character _) = return val
-eval (List [Atom "quote", val]) = return val
-eval (List [Atom "if", pred, conseq, alt]) = do
-    result <- eval pred
+eval :: Env -> LispVal -> IOThrowsError LispVal
+eval env val@(String _) = return val
+eval env val@(Number _) = return val
+eval env val@(Bool   _) = return val
+eval env val@(Character _) = return val
+eval env (Atom id) = getVar env id
+eval env (List [Atom "quote", val]) = return val
+eval env (List [Atom "if", pred, conseq, alt]) = do
+    result <- eval env pred
     case result of
-        Bool False -> eval alt
-        Bool True  -> eval conseq
+        Bool False -> eval env alt
+        Bool True  -> eval env conseq
         otherwise  -> throwError $ TypeMismatch "Predicate should return Bool" result
-eval (List (Atom func : args)) = mapM eval args >>= apply func
-eval badform = throwError $ BadSpecialForm "Unrecognized special form" badform
+eval env (List (Atom "cond":xs)) = cond env xs
+eval env (List (Atom "case":key:xs)) = do
+    evaled <- eval env key
+    caseFun env (evaled:xs)
+eval env (List [Atom "set!", Atom var, form]) =
+                eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form]) =
+                eval env form >>= defineVar env var
+eval env (List (Atom func : args)) = mapM (eval env) args >>= liftThrows . apply func
+eval env badform = throwError $ BadSpecialForm "Unrecognized special form" badform
+
+
+cond :: Env -> [LispVal] -> IOThrowsError LispVal
+cond env ((List [Atom "else", expr]):[]) = eval env expr
+cond env ((List [test, expr]):xs) = do
+    r' <- eval env test
+    case r' of
+        (Bool True)  -> eval env expr
+        (Bool False) -> cond env xs
+        _        -> throwError $ TypeMismatch "a boolean expression" r'
+cond env [] = throwError $ NumArgs 1 []
+cond env (x:xs) = throwError $ TypeMismatch "(test expr)" x
+
+caseFun :: Env -> [LispVal] -> IOThrowsError LispVal
+caseFun env [_, List [Atom "else", expr]] = eval env expr
+caseFun env (key:(List [List clauses,expr]):xs) = do
+   comparisons <- liftThrows $ mapM (\c -> eqv [key, c]) clauses
+   let result = (or . map extractBool) comparisons
+   case result of
+       True  -> eval env expr
+       False -> caseFun env (key:xs)
+   where
+       extractBool (Bool True) = True
+       extractBool (Bool False) = False
+caseFun env [key] = return $ Atom "undefined"
+caseFun env [] = throwError $ NumArgs 2 []
+caseFun env (x:xs) = throwError $ TypeMismatch "((c1, c2 ...) expr)" x
+
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
 apply func args = maybe
@@ -71,8 +109,6 @@ primitives = [("+", numericBinop (+))
              ,("eqv?", eqv)
              ,("eq?", eqv)
              ,("equal?", equal)
-             ,("cond", cond)
-             ,("case", caseFun)
              ,("make-string", makeString)
              ,("string-length", stringLength)
              ,("string-ref", stringRef)
@@ -138,31 +174,7 @@ makeString [] = throwError $ NumArgs 1 []
 makeString (x:xs) = throwError $ TypeMismatch "Integer" x
 
 
-cond :: [LispVal] -> ThrowsError LispVal
-cond ((List [Atom "else", expr]):[]) = eval expr
-cond ((List [test, expr]):xs) = do
-    r' <- eval test
-    case r' of
-        (Bool True)  -> eval expr
-        (Bool False) -> cond xs
-        _        -> throwError $ TypeMismatch "a boolean expression" r'
-cond [] = throwError $ NumArgs 1 []
-cond (x:xs) = throwError $ TypeMismatch "(test expr)" x
 
-caseFun :: [LispVal] -> ThrowsError LispVal
-caseFun [_, List [Atom "else", expr]] = eval expr
-caseFun (key:(List [List clauses,expr]):xs) = do
-    comparisons <- mapM (\c -> eqv [key, c]) clauses
-    let result = (or . map extractBool) comparisons
-    case result of
-        True  -> eval expr
-        False -> caseFun (key:xs)
-    where
-        extractBool (Bool True) = True
-        extractBool (Bool False) = False
-caseFun [key] = return $ Atom "undefined"
-caseFun [] = throwError $ NumArgs 2 []
-caseFun (x:xs) = throwError $ TypeMismatch "((c1, c2 ...) expr)" x
 
 
 car :: [LispVal] -> ThrowsError LispVal
