@@ -19,9 +19,14 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 spaces :: Parser ()
 spaces = skipMany1 space
 
+{-
+This needs to be reimplemented as it interferes with dotted list,
+and generally is rather awkward
+-}
 parseNumber :: Parser LispVal
 parseNumber = do
-    num <- lookAhead $ many (noneOf " ")
+    num <- lookAhead $ try $ many (alphaNum <|> char '.')
+    traceM $ "num: " ++ num
     case num of
         ('#':num') -> parseInteger
         num' -> case () of

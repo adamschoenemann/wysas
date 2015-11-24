@@ -101,6 +101,7 @@ apply (Func (LFunc params varargs body closure)) args =
                 Just argName -> liftIO $ bindVars env [(argName, List remainingArgs)]
                 Nothing -> return env
 apply (IOFunc func) args = func args
+apply other args = throwError $ TypeMismatch "function" other
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [("+", numericBinop (+))
