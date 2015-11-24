@@ -6,6 +6,7 @@ import Control.Monad.Error
 import Text.ParserCombinators.Parsec.Error
 import Control.Monad.Error
 import Data.IORef
+import System.IO
 
 data LispVal = Atom String
              | List [LispVal]
@@ -17,6 +18,8 @@ data LispVal = Atom String
              | Vector (Array Integer LispVal)
              | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
              | Func LispFunc
+             | IOFunc ([LispVal] -> IOThrowsError LispVal)
+             | Port Handle
 
 
 data LispFunc =
@@ -47,6 +50,8 @@ showVal (Func f) = "(lambda (" ++ unwords (map show $ params f) ++
     (case vararg f of
         Nothing -> ""
         Just arg -> " . " ++ arg) ++ ") ...)"
+showVal (Port _) = "<IO Port>"
+showVal (IOFunc _) = "<IO primitive>"
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
