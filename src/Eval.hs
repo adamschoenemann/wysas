@@ -7,8 +7,7 @@ import Control.Monad.Error
 import Debug.Trace
 import Data.Char (toUpper)
 
-import LispVal
-import LispError
+import LispData
 import LispEnv
 
 eval :: Env -> LispVal -> IOThrowsError LispVal

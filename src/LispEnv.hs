@@ -3,8 +3,7 @@ module LispEnv where
 import Data.IORef
 import Control.Monad.Error
 
-import LispVal
-import LispError
+import LispData
 
 type Env = IORef [(String, IORef LispVal)]
 

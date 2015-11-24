@@ -9,7 +9,6 @@ import Text.ParserCombinators.Parsec (parse)
 
 import Parse
 import Eval
-import LispError (trapError, extractValue)
 import LispEnv
 
 flushStr :: String -> IO ()

@@ -11,8 +11,7 @@ import Numeric
 
 import Debug.Trace
 
-import LispVal
-import LispError
+import LispData
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
