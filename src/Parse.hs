@@ -19,26 +19,19 @@ symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 spaces :: Parser ()
 spaces = skipMany1 space
 
-{-
-This needs to be reimplemented as it interferes with dotted list,
-and generally is rather awkward
--}
 parseNumber :: Parser LispVal
-parseNumber = do
-    num <- lookAhead $ try $ many (alphaNum <|> char '.')
-    traceM $ "num: " ++ num
-    case num of
-        ('#':num') -> parseInteger
-        num' -> case () of
-            _ | '.' `elem` num' -> parseReal
-              | '+' `elem` num' && last num' == 'i' -> parseComplex
-              | '/' `elem` num' -> parseRational
-              | otherwise -> parseInteger
+parseNumber = try parseComplex
+          <|> try parseRational
+          <|> try parseReal
+          <|> try parseInteger
 
 parseReal :: Parser LispVal
 parseReal = do
-    digits <- many (digit <|> char '.')
-    return $ Number $ LRea ((fst . head . readFloat) digits)
+    decimals <- many1 digit <* char '.'
+    fractionals <- many1 digit
+    let digits = decimals ++ "." ++ fractionals
+    traceM digits
+    return $ Number $ LRea ((fst . head . readFloat) $ digits)
 
 parseComplex :: Parser LispVal
 parseComplex = do
@@ -50,14 +43,15 @@ parseComplex = do
 
 parseRational :: Parser LispVal
 parseRational = do
-    ops <- sepBy1 (many digit) (char '/')
-    let [num, denom] = map (read) ops :: [Integer]
-    return $ Number $ LRat $ (toRational num) / (toRational denom)
+    num <- many1 digit
+    char '/'
+    denom <- many1 digit
+    return $ Number $ LRat $ (toRational . read $ num) / (toRational . read $ denom)
 
 parseInteger :: Parser LispVal
 parseInteger = (parseDecimal) <|> (parseFormat) where
     parseFormat = do
-        r <- try $ char '#' >> oneOf "bodx"
+        r <- char '#' >> oneOf "bodx"
         let (reader, permitted) = getFormat r
         ds <- many $ permitted
         return $ (Number . LInt . reader) ds
