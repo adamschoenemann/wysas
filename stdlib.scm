@@ -26,3 +26,43 @@
     (if (null? lst)
         accum
         (foldl func (func accum (car lst)) (cdr lst))))
+
+(define fold foldl)
+(define reduce foldr)
+
+(define (unfold func init pred)
+    (if (pred init)
+        (cons init '())
+        (cons init (unfold func (func init) pred))))
+
+(define (sum . lst) (fold + 0 lst))
+(define (product . lst) (fold * 1 lst))
+(define (and . lst) (fold && #t lst))
+(define (or . lst) (fold || #f lst))
+
+(define (max . lst) (fold
+    (lambda (x y)
+        (if (> x y) x y))
+    (car lst) (cdr lst)))
+
+(define (min . lst) (fold
+    (lambda (x y)
+        (if (< x y) x y))
+    (car lst) (cdr lst)))
+
+(define (length lst) (fold (lambda (acc x) (+ acc 1)) 0 lst))
+
+(define (reverse lst) (fold (flip cons) '() lst))
+
+(define (mem-helper pred op) (lambda (acc next) (if (and (not acc) (pred (op next))) #t acc)))
+(define (memq obj lst)       (fold (mem-helper (curry eq?    obj) id)  #f lst))
+(define (memv obj lst)       (fold (mem-helper (curry eqv?   obj) id)  #f lst))
+(define (member obj lst)     (fold (mem-helper (curry equal? obj) id)  #f lst))
+(define (assq obj alist)     (fold (mem-helper (curry eq?    obj) car) #f alist))
+(define (assv obj alist)     (fold (mem-helper (curry eqv?   obj) car) #f alist))
+(define (assoc obj alist)    (fold (mem-helper (curry equal? obj) car) #f alist))
+
+(define (map func lst) (fold (lambda (acc x) (cons (func x) acc)) '() lst))
+
+(define (filter pred lst) (fold (lambda (acc x) (if (pred x) (cons x acc) acc)) '() lst))
+
